@@ -60,7 +60,7 @@ def QRS_decision(result):
 
 def performance(data, refs, model, write_to_file=False, name=None, fs=500):
     '''
-    计算得分
+    计算模型性能表现
     '''
     R_ans = []
     tp_all = 0

@@ -133,7 +133,7 @@ def ur_calculate(class_true, class_pred):
 
 
 def score(data_path, ans_path):
-    # AF burden estimation
+    # AF burden estimation 自动对焦负担估算
     SCORE = []
 
     def is_mat_or_json(file):
