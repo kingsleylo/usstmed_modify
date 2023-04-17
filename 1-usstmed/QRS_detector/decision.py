@@ -2,20 +2,29 @@ import numpy as np
 
 
 def decision(result, thresh=2):
-    pos = np.argwhere(result > 0.5).flatten()
+    '''
+    使用CNN预测R峰位置进行QRS波群的位置。
+    '''
+    pos = np.argwhere(result > 0.5).flatten()  # 提取幅值大于0.5的位置
     rpos = []
-    pre = 0
-    last = len(pos)
-    for j in np.where(np.diff(pos) > 2)[0]:
+    pre = 0  # 前一个QRS波群的位置
+    last = len(pos)  # QRS波群位置的数量
+    for j in np.where(np.diff(pos) > 2)[0]:  # 找出r间期大于2的
         if j - pre > thresh:
-            rpos.append((pos[pre] + pos[j]) * 4)
+            rpos.append((pos[pre] + pos[j]) * 4)  # 如果r间期大于thresh，两个QRS波之间的位置作为一个QRS波的位置
         pre = j + 1
-    rpos.append((pos[pre] + pos[last - 1]) * 4)
+    rpos.append((pos[pre] + pos[last - 1]) * 4) #最后一个QRS波群的位置，乘以4是进行了下采样了
     qrs = np.array(rpos)
     try:
         qrs_diff = np.diff(qrs)
     except:
         return np.array([0])
+
+    '''
+    检查并删除不合理的特征波：QRS波的位置之间的差小于100，说明这两个QRS波是同一个QRS波，而不是两个不同的QRS波。
+    如果相邻QRS波之间的幅度差异过大，则删除幅度较小的那个QRS波。这个过程会不断进行，
+    直到所有QRS波的位置之间都有足够大的差异。
+    '''
     check = True
     while check:
         qrs_diff = np.diff(qrs)

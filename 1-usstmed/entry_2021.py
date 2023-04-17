@@ -27,33 +27,39 @@ def load_data(sample_path):
 
 
 def challenge_entry(sample_path):
-    """
-    This is a baseline method.
-    """
+    '''
+    :sample_path:样本的数据文件
+    函数的作用：预测QRS波群位置和房颤的检测。
+    流程：首先通过load_data函数加载样本数据，并对数据进行滤波处理。
+    然后根据数据长度判断分段情况。如果数据长度小于4000，则将信号重采样，然后预测QRS波群位置和房颤。
+    如果数据长度大于4000，则对信号进行分段处理，每段长度为1600，分别预测QRS波群位置和房颤。
+    最后，根据预测结果判断房颤的存在，并返回结果。
+    '''
 
-    sig, length, fs = load_data(sample_path)
+    sig, length, fs = load_data(sample_path)  # 加载心电数据
+    # 使用带通滤波进行滤波，保留0.5~45Hz之间的信号，去除噪声
     sig[:, 0] = filter_signal(sig[:, 0], ftype='FIR', band='bandpass', order=50, frequency=[0.5, 45], sampling_rate=fs)[
         0]
     sig[:, 1] = filter_signal(sig[:, 1], ftype='FIR', band='bandpass', order=50, frequency=[0.5, 45], sampling_rate=fs)[
         0]
-    n_seg = (length - 800) // 1600  #
+    n_seg = (length - 800) // 1600  # 将数据统一裁剪成8s的长度
     qrs_pred = []  # QRS预测
     af_pred = []  # 房颤预测
-    if length < 4000:
-        sig[:, 0] -= np.mean(sig[:, 0])
+    if length < 4000:  # 4000/500=8s
+        sig[:, 0] -= np.mean(sig[:, 0])  # 减去信号的均值，去除直流分量
         sig[:, 1] -= np.mean(sig[:, 1])
-        # 重叠的采样点长度，使用傅里叶方法沿给定轴对“x”到“num”样本进行重采样。重新采样的信号从与“x”相同的值开始，但采样的间距为“len（x）num（x）间距”。由于使用了傅里叶方法，因此假定信号是周期性的。
+        # 重采样至500hz，使用傅里叶方法沿给定轴对“x”到“num”样本进行重采样。重新采样的信号从与“x”相同的值开始，但采样的间距为“len（x）num（x）间距”。
         ecg0 = resample(sig[:, 0], int(len(sig[:, 0]) * 2.5))
         ecg1 = resample(sig[:, 1], int(len(sig[:, 1]) * 2.5))
-        ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
+        ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)  # 合并两个通道的信号
         qrs_pred = qrs.predict(np.expand_dims(ecg, -1))[1, :, 0]
         af_pred = model.predict(np.expand_dims(sig, 0))[0, :, 0]
     else:
         for s in range(n_seg - 1):
-            temp = sig[1600 * s:1600 * s + 2400, :].copy()
+            temp = sig[1600 * s:1600 * s + 2400, :].copy()  # 原始信号裁剪成长度为2400的小段，2400/200=12S
             temp[:, 0] = temp[:, 0] - temp[:, 0].mean()
             temp[:, 1] = temp[:, 1] - temp[:, 1].mean()
-            ecg0 = resample(temp[:, 0], int(len(temp[:, 0]) * 2.5))
+            ecg0 = resample(temp[:, 0], int(len(temp[:, 0]) * 2.5))  # 将信号进行重采样，使其采样率变为1250Hz
             ecg1 = resample(temp[:, 1], int(len(temp[:, 1]) * 2.5))
             ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
             fr = 125 if s > 0 else 0
@@ -68,7 +74,7 @@ def challenge_entry(sample_path):
         qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[:, :, 0][125:]))
         af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][25:]))
 
-    rs = QRS_decision(np.array(qrs_pred))
+    rs = QRS_decision(np.array(qrs_pred))  # 根据预测结果判断QRS波群位置
     rs = rs // 2.5
     res = np.array(af_pred)
     pred_af = np.where(res[(rs // 16).astype(int)] > 0.52)[0]
@@ -137,10 +143,10 @@ if __name__ == '__main__':
     if not os.path.exists(RESULT_PATH):
         os.makedirs(RESULT_PATH)
     test_set = open(os.path.join(DATA_PATH, 'RECORDS'), 'r').read().splitlines()
-    qrs = model_from_json(open('./QRS_detector/models/CNN.json').read())
+    qrs = model_from_json(open('./QRS_detector/models/CNN.json').read())  # 加载QRS波CNN预测模型
     qrs.load_weights('./QRS_detector/models/CNN.h5')
     model = model_from_json(open('deep.json').read())
-    model.load_weights('deep.h5')
+    model.load_weights('deep.h5')  # 房颤检测CNN预测模型
     model.summary()
     for i, sample in enumerate(test_set):
         print(sample)
