@@ -42,13 +42,13 @@ def challenge_entry(sample_path):
         0]
     sig[:, 1] = filter_signal(sig[:, 1], ftype='FIR', band='bandpass', order=50, frequency=[0.5, 45], sampling_rate=fs)[
         0]
-    n_seg = (length - 800) // 1600  # 将数据统一裁剪成8s的长度
+    n_seg = (length - 800) // 1600  # 将数据统一裁剪成8s的长度，(8*0.5)4s为重叠采样,裁剪的片段个数
     qrs_pred = []  # QRS预测
     af_pred = []  # 房颤预测
-    if length < 4000:  # 4000/500=8s
+    if length < 4000:  # 4000/200=20s
         sig[:, 0] -= np.mean(sig[:, 0])  # 减去信号的均值，去除直流分量
         sig[:, 1] -= np.mean(sig[:, 1])
-        # 重采样至500hz，使用傅里叶方法沿给定轴对“x”到“num”样本进行重采样。重新采样的信号从与“x”相同的值开始，但采样的间距为“len（x）num（x）间距”。
+        # 重采样至500hz，使用快速傅里叶方法沿给定轴对“x”到“num”样本进行重采样。重新采样的信号从与“x”相同的值开始，但采样的间距为“len（x）num（x）间距”。
         ecg0 = resample(sig[:, 0], int(len(sig[:, 0]) * 2.5))
         ecg1 = resample(sig[:, 1], int(len(sig[:, 1]) * 2.5))
         ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)  # 合并两个通道的信号
@@ -59,7 +59,7 @@ def challenge_entry(sample_path):
             temp = sig[1600 * s:1600 * s + 2400, :].copy()  # 原始信号裁剪成长度为2400的小段，2400/200=12S
             temp[:, 0] = temp[:, 0] - temp[:, 0].mean()
             temp[:, 1] = temp[:, 1] - temp[:, 1].mean()
-            ecg0 = resample(temp[:, 0], int(len(temp[:, 0]) * 2.5))  # 将信号进行重采样，使其采样率变为1250Hz
+            ecg0 = resample(temp[:, 0], int(len(temp[:, 0]) * 2.5))  # 将信号进行重采样，使其采样率变为500Hz，样本点变为6000
             ecg1 = resample(temp[:, 1], int(len(temp[:, 1]) * 2.5))
             ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
             fr = 125 if s > 0 else 0
@@ -74,8 +74,8 @@ def challenge_entry(sample_path):
         qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[:, :, 0][125:]))
         af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][25:]))
 
-    rs = QRS_decision(np.array(qrs_pred))  # 根据预测结果判断QRS波群位置
-    rs = rs // 2.5
+    rs = QRS_decision(np.array(qrs_pred))  # 根据r峰值的预测结果判断QRS波群位置
+    rs = rs // 2.5 # 将QRS波群位置还原到原始采样率
     res = np.array(af_pred)
     pred_af = np.where(res[(rs // 16).astype(int)] > 0.52)[0]
     change = np.where(np.diff(pred_af) > 4)[0]
