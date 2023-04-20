@@ -8,6 +8,7 @@ from keras.utils import plot_model
 from scipy.signal import resample
 from QRS_detector.decision import *
 
+
 def load_data(sample_path):
     '''
     使用wfdb读取数据
@@ -17,32 +18,37 @@ def load_data(sample_path):
     fs = fields['fs']  # 读取采样频率
 
     return sig, length, fs
+
+
 def plot_image(data):
     plt.plot(data)
     plt.show()
-def svae_mode_txt(model,name):
+
+
+def svae_mode_txt(model, name):
     '''
     将模型文件保存为txt
     '''
-    txt_path='./model_txt/'+f'{name}.txt'
+    txt_path = './model_txt/' + f'{name}.txt'
     with open(txt_path, 'w') as f:
         model.summary(print_fn=lambda x: f.write(x + '\n'))
-    print(name+"保存成功")
+    print(name + "保存成功")
+
 
 if __name__ == '__main__':
-    sample_path = r'G:\2-pycharm_file\1-python_programe\2-面试算法题\生理信号挑战赛\data\training_1\data_0_1'
+    sample_path = r'G:\2-pycharm_file\1-python_programe\2-面试算法题\生理信号挑战赛\data\training_1\data_3_1'
 
     # # 加载QRS波模型和房颤检测CNN模型
     qrs = model_from_json(open('./QRS_detector/models/CNN.json').read())  # 加载QRS波CNN预测模型
     qrs.load_weights('./QRS_detector/models/CNN.h5')
     print('\nQRS定位CNN模型结构\n')
     qrs.summary()
-    svae_mode_txt(qrs,'QRS检测模型')
+    # svae_mode_txt(qrs, 'QRS检测模型')
     model = model_from_json(open('deep.json').read())
     model.load_weights('deep.h5')  # 房颤检测CNN预测模型
     print('\n房颤检测CNN模型结构\n')
     model.summary()
-    svae_mode_txt(model, '房颤检测模型')
+    # svae_mode_txt(model, '房颤检测模型')
     sig, length, fs = load_data(sample_path)  # 加载心电数据
     print(f'信号的采样频率：{fs}hz')
     print(f'信号的长度：{length}，{length / 200}')
@@ -94,6 +100,10 @@ if __name__ == '__main__':
             # plot_image(ecg0)
             ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
             fr = 125 if s > 0 else 0
+            ecg_1=np.expand_dims(ecg,-1)
+            predict_test=qrs.predict(ecg_1)
+            np.save("./test_npy/ecg_1",ecg_1)
+            np.save('./test_npy/qrs_predict',predict_test)
             qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[1, :, 0][fr:-125]))
             af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][fr // 5:-25]))
         temp = sig[1600 * n_seg - 1600:, :].copy()
@@ -103,7 +113,7 @@ if __name__ == '__main__':
         ecg1 = resample(temp[:, 1], int(len(temp[:, 1]) * 2.5))
         ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
         qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[:, :, 0][125:]))
-        af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][25:]))
+        af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][25:])) #把值放到af_pred末尾
 
     rs = QRS_decision(np.array(qrs_pred))  # 根据r峰值的预测结果判断QRS波群位置
     rs = rs // 2.5  # 将QRS波群位置还原到原始采样率
@@ -163,4 +173,4 @@ if __name__ == '__main__':
     end = np.expand_dims(end, -1)
     start_end = np.concatenate((start, end), axis=-1).tolist()
     end_points.extend(start_end)
-
+    print(end_points)

@@ -42,7 +42,7 @@ def challenge_entry(sample_path):
         0]
     sig[:, 1] = filter_signal(sig[:, 1], ftype='FIR', band='bandpass', order=50, frequency=[0.5, 45], sampling_rate=fs)[
         0]
-    n_seg = (length - 800) // 1600  # 将数据统一裁剪成8s的长度，(8*0.5)4s为重叠采样,裁剪的片段个数
+    n_seg = (length - 800) // 1600  # 裁剪的片段数
     qrs_pred = []  # QRS预测
     af_pred = []  # 房颤预测
     if length < 4000:  # 4000/200=20s
@@ -62,10 +62,10 @@ def challenge_entry(sample_path):
             ecg0 = resample(temp[:, 0], int(len(temp[:, 0]) * 2.5))  # 将信号进行重采样，使其采样率变为500Hz，样本点变为6000
             ecg1 = resample(temp[:, 1], int(len(temp[:, 1]) * 2.5))
             ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
-            fr = 125 if s > 0 else 0
-            qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[1, :, 0][fr:-125]))
+            fr = 125 if s > 0 else 0  ## 对前面两个分段的信号跳过前后125个点，因为这些点可能不够稳定
+            qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[1, :, 0][fr:-125]))  # 对片段进行预测
             af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][fr // 5:-25]))
-        temp = sig[1600 * n_seg - 1600:, :].copy()
+        temp = sig[1600 * n_seg - 1600:, :].copy()  # 对最后一段信号进行同样的处理，但是不需要重叠部分
         temp[:, 0] = temp[:, 0] - temp[:, 0].mean()
         temp[:, 1] = temp[:, 1] - temp[:, 1].mean()
         ecg0 = resample(temp[:, 0], int(len(temp[:, 0]) * 2.5))
@@ -73,16 +73,25 @@ def challenge_entry(sample_path):
         ecg = np.concatenate([np.expand_dims(ecg0, 0), np.expand_dims(ecg1, 0)], axis=0)
         qrs_pred.extend(list(qrs.predict(np.expand_dims(ecg, -1))[:, :, 0][125:]))
         af_pred.extend(list(model.predict(np.expand_dims(temp, 0))[0, :, 0][25:]))
-
+    '''
+    首先，将预测出的QRS波群位置还原到原始采样率，然后根据预测结果和QRS波群位置判断房颤发作的时间段。
+    其中，res是预测出的房颤概率值，pred_af是房颤发作位置的预测结果，change是相邻两个房颤发作位置之间的间隔，
+    good_af是筛选后的房颤发作位置。如果good_af的长度小于6，表示没有检测到房颤，end_points为空。如果good_af的长度大于等于6，
+    则进一步确定房颤的发作时间段。如果good_af之间的间隔都小于等于5，即相邻两个房颤发作位置之间的QRS波群数小于等于5，则将所有的发作位置看作一段，
+    并将该段起始位置和结束位置分别设置为20个QRS波群前和20个QRS波群后。如果good_af之间的间隔大于5，则将相邻两个房颤发作位置之间的QRS波群数
+    大于5的位置分别视为一段，并将每一段的起始位置和结束位置分别设置为20个QRS波群前和20个QRS波群后。
+    如果最后一段房颤发作位置的结束位置大于等于QRS波群位置的最后一个位置，则将该段的结束位置设置为信号的最后一个位置。
+    如果第一段房颤发作位置的起始位置小于0，则将该段的起始位置设置为0。
+    '''
     rs = QRS_decision(np.array(qrs_pred))  # 根据r峰值的预测结果判断QRS波群位置
-    rs = rs // 2.5 # 将QRS波群位置还原到原始采样率
-    res = np.array(af_pred)
-    pred_af = np.where(res[(rs // 16).astype(int)] > 0.52)[0]
+    rs = rs // 2.5  # 将QRS波群位置还原到原始采样率
+    res = np.array(af_pred)#房颤概率值
+    pred_af = np.where(res[(rs // 16).astype(int)] > 0.52)[0] #找出幅值大于0.52的值
     change = np.where(np.diff(pred_af) > 4)[0]
     end_points = []
     start = []
     end = []
-    good_af = []
+    good_af = [] #筛选后的房颤发作位置
     i = 0
     while i < len(pred_af):
         if i + 4 < len(pred_af) and pred_af[i] + 4 == pred_af[i + 4]:
@@ -95,7 +104,7 @@ def challenge_entry(sample_path):
             i += n
         else:
             i += 1
-    if len(good_af) < 6:
+    if len(good_af) < 6: #challenge规定发生房颤的时间段要包含5个心电波
         end_points = []
     else:
         change = np.where(np.diff(good_af) > 5)[0]
